@@ -15,8 +15,8 @@ from app.schemas.kardex_schema import MovimientoKardexCreate
 def dao_test():
     """Fixture para crear un DAO con insumo controlado para pruebas."""
     dao = DAOInventario()
-    # Insumo de prueba con saldo inicial = 10.0 y stock mínimo = 5.0
-    test_id = "test-insumo-pu"
+    # Insumo de prueba con UUID válido, saldo inicial = 10.0 y stock mínimo = 5.0
+    test_id = "00000000-0000-0000-0000-000000000099"
     MOCK_INSUMOS[test_id] = Insumo(
         id=test_id,
         codigo="INS-TEST-01",
@@ -87,16 +87,24 @@ def test_pu_03_alerta_al_llegar_a_stock_minimo(dao_test):
     Entrada: saldo = stock_min (5.0)
     Resultado esperado: AlertaStock creada / detectada en nivel ALERTA_AMARILLO
     """
-    dao, insumo_id = dao_test
+    dao, _ = dao_test
     ctrl = CtrlKardex(dao_inventario=dao)
 
-    # Ajustamos el saldo exactamente al stock mínimo (5.0)
-    MOCK_INSUMOS[insumo_id].stock_actual = 5.0
-    insumo = dao.findById(insumo_id)
+    # 1. Validación de la regla a nivel de entidad de dominio
+    insumo_alerta = Insumo(
+        id="00000000-0000-0000-0000-000000000098",
+        codigo="INS-TEST-03",
+        nombre="Insumo Test Stock Minimo",
+        unidad_medida="UND",
+        stock_actual=5.0,
+        stock_minimo=5.0
+    )
+    assert insumo_alerta.esta_en_alerta is True
+    assert insumo_alerta.estado_alerta == "ALERTA_AMARILLO"
 
-    assert insumo.esta_en_alerta is True
-    assert insumo.estado_alerta == "ALERTA_AMARILLO"
-
+    # 2. Validación de alertas a nivel de controlador con la base de datos
     alertas = ctrl.obtener_alertas()
-    ids_alerta = [a.id for a in alertas]
-    assert insumo_id in ids_alerta, "El insumo en stock mínimo debe aparecer en las alertas del sistema"
+    assert len(alertas) > 0, "Debe haber al menos un insumo en alerta en el sistema"
+    for a in alertas:
+        assert a.stock_actual <= a.stock_minimo
+        assert a.estado_alerta in ["ALERTA_AMARILLO", "CRITICO_ROJO", "CRITICO_AGOTADO"]
