@@ -6,7 +6,7 @@ from typing import Optional, List
 from datetime import datetime
 
 class InsumoBase(BaseModel):
-    codigo: str = Field(..., examples=["INS-TAZ-01"])
+    codigo: Optional[str] = Field(None, examples=["INS-TAZ-01"])
     nombre: str = Field(..., examples=["Taza de Cerámica Blanca 11oz"])
     descripcion: Optional[str] = Field(None, examples=["Taza blanca para sublimación"])
     unidad_medida: str = Field(default="UND", examples=["UND"])

@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends
 from app.controllers.ctrl_kardex import CtrlKardex
 from app.schemas.kardex_schema import (
     InsumoResponse,
+    InsumoCreateRequest,
     MovimientoKardexCreate,
     MovimientoKardexResponse,
     AlertaStockResponse,
@@ -20,6 +21,21 @@ def listar_insumos():
     """Retorna la lista de insumos con stock actual y estado de alertas."""
     ctrl = CtrlKardex()
     return ctrl.listar_insumos()
+
+@router.post("/insumos", response_model=InsumoResponse, status_code=201, summary="Crear Insumo (Código Autogenerado)")
+def crear_insumo(
+    data: InsumoCreateRequest,
+    usuario_id: Optional[str] = Depends(get_current_user_id)
+):
+    """Crea un nuevo insumo; si no se envía código, se autogenera según su categoría."""
+    ctrl = CtrlKardex()
+    return ctrl.crear_insumo(data, usuario_id=usuario_id)
+
+@router.delete("/insumos/{insumo_id}", summary="Eliminar Insumo")
+def eliminar_insumo(insumo_id: str):
+    """Da de baja lógica a un insumo (activo = FALSE)."""
+    ctrl = CtrlKardex()
+    return ctrl.eliminar_insumo(insumo_id)
 
 @router.get("/insumos/{insumo_id}", response_model=InsumoResponse, summary="Detalle de Insumo")
 def obtener_insumo(insumo_id: str):

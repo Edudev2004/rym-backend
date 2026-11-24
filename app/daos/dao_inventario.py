@@ -7,9 +7,11 @@ Operaciones: registrarMovimiento(), getSaldo(), findAlertas()
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timezone
 import uuid
+import re
 import logging
 from app.daos.base_dao import BaseDAO
 from app.models.insumo import Insumo, MovimientoKardex
+from app.schemas.kardex_schema import InsumoCreateRequest
 
 logger = logging.getLogger(__name__)
 
@@ -280,3 +282,126 @@ class DAOInventario(BaseDAO):
             pass
 
         return [m for m in MOCK_MOVIMIENTOS if m.insumo_id == insumo_id]
+
+    def generar_codigo_autogenerado(self, nombre: str) -> str:
+        """
+        Autogenera un código secuencial según la categoría del nombre del insumo.
+        Formato: INS-{PREFIJO}-{NUMERO_2_DIGITOS}
+        Ejemplo: "Taza Mágica" -> "INS-TAZ-03", "Polo Negro" -> "INS-POL-03"
+        """
+        # Extraer las primeras 3 letras del primer vocablo significativo
+        palabras = [p for p in re.sub(r'[^a-zA-Z0-9\s]', '', nombre).upper().split() if len(p) >= 3]
+        prefix = palabras[0][:3] if palabras else "GEN"
+
+        # Buscar el número correlativo más alto con ese prefijo
+        sql = "SELECT codigo FROM insumos WHERE codigo LIKE %s;"
+        codigos_existentes = []
+        try:
+            rows = self.execute_query(sql, (f"INS-{prefix}-%",))
+            codigos_existentes = [r["codigo"] for r in rows]
+        except Exception:
+            pass
+
+        if not codigos_existentes:
+            codigos_existentes = [
+                i.codigo for i in MOCK_INSUMOS.values()
+                if i.codigo.startswith(f"INS-{prefix}-")
+            ]
+
+        # Extraer números existentes
+        max_num = 0
+        for cod in codigos_existentes:
+            match = re.search(r'INS-[A-Z0-9]+-(\d+)', cod)
+            if match:
+                try:
+                    max_num = max(max_num, int(match.group(1)))
+                except ValueError:
+                    pass
+
+        siguiente = max_num + 1
+        return f"INS-{prefix}-{siguiente:02d}"
+
+    def crearInsumo(self, data: InsumoCreateRequest, usuario_id: Optional[str] = None) -> Insumo:
+        """Crea un nuevo insumo en la base de datos con código autogenerado si no se especificó."""
+        codigo = data.codigo.strip() if data.codigo and data.codigo.strip() else self.generar_codigo_autogenerado(data.nombre)
+
+        sql = """
+            INSERT INTO insumos (
+                codigo, nombre, descripcion, unidad_medida, stock_actual, stock_minimo, costo_unitario, activo
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, TRUE)
+            RETURNING id, codigo, nombre, descripcion, unidad_medida, stock_actual, stock_minimo, costo_unitario, activo, created_at, updated_at;
+        """
+        params = (
+            codigo,
+            data.nombre.strip(),
+            data.descripcion,
+            data.unidad_medida,
+            float(data.stock_inicial or 0.0),
+            float(data.stock_minimo),
+            float(data.costo_unitario or 0.0)
+        )
+        try:
+            r = self.execute_commit(sql, params)
+            if r:
+                nuevo_insumo = Insumo(
+                    id=str(r["id"]),
+                    codigo=r["codigo"],
+                    nombre=r["nombre"],
+                    unidad_medida=r["unidad_medida"],
+                    stock_actual=float(r["stock_actual"]),
+                    stock_minimo=float(r["stock_minimo"]),
+                    costo_unitario=float(r["costo_unitario"]),
+                    descripcion=r.get("descripcion"),
+                    activo=r["activo"],
+                    created_at=r.get("created_at"),
+                    updated_at=r.get("updated_at")
+                )
+                if data.stock_inicial > 0:
+                    try:
+                        self.registrarMovimiento(
+                            insumo_id=nuevo_insumo.id,
+                            tipo_movimiento="ENTRADA",
+                            motivo="INVENTARIO_INICIAL",
+                            cantidad=float(data.stock_inicial),
+                            costo_unitario=float(data.costo_unitario or 0.0),
+                            usuario_id=usuario_id,
+                            observaciones="Saldo inicial registrado en alta de insumo"
+                        )
+                    except Exception as e:
+                        logger.warning(f"No se pudo registrar movimiento inicial en kardex: {e}")
+                return nuevo_insumo
+        except Exception as e:
+            logger.info(f"Fallback crear insumo en memoria: {e}")
+
+        # Fallback en memoria
+        new_id = str(uuid.uuid4())
+        insumo_mock = Insumo(
+            id=new_id,
+            codigo=codigo,
+            nombre=data.nombre.strip(),
+            unidad_medida=data.unidad_medida,
+            stock_actual=float(data.stock_inicial or 0.0),
+            stock_minimo=float(data.stock_minimo),
+            costo_unitario=float(data.costo_unitario or 0.0),
+            descripcion=data.descripcion,
+            activo=True,
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc)
+        )
+        MOCK_INSUMOS[new_id] = insumo_mock
+        return insumo_mock
+
+    def eliminarInsumo(self, insumo_id: str) -> bool:
+        """Da de baja lógica a un insumo (activo = FALSE)."""
+        sql = "UPDATE insumos SET activo = FALSE, updated_at = NOW() WHERE id = %s RETURNING id;"
+        try:
+            r = self.execute_commit(sql, (insumo_id,))
+            if r:
+                return True
+        except Exception as e:
+            logger.info(f"Fallback eliminar insumo en memoria: {e}")
+
+        if insumo_id in MOCK_INSUMOS:
+            MOCK_INSUMOS[insumo_id].activo = False
+            return True
+        return False

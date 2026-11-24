@@ -9,6 +9,7 @@ from app.daos.dao_inventario import DAOInventario, StockInsuficienteException
 from app.services.inventario_service import InventarioService
 from app.schemas.kardex_schema import (
     InsumoResponse,
+    InsumoCreateRequest,
     MovimientoKardexCreate,
     MovimientoKardexResponse,
     AlertaStockResponse,
@@ -186,3 +187,36 @@ class CtrlKardex:
             )
             for m in movs
         ]
+
+    def crear_insumo(
+        self,
+        data: InsumoCreateRequest,
+        usuario_id: Optional[str] = None
+    ) -> InsumoResponse:
+        """Crea un insumo con código autogenerado o asignado y registra stock inicial."""
+        insumo = self.dao.crearInsumo(data, usuario_id=usuario_id)
+        return InsumoResponse(
+            id=insumo.id,
+            codigo=insumo.codigo,
+            nombre=insumo.nombre,
+            descripcion=insumo.descripcion,
+            unidad_medida=insumo.unidad_medida,
+            stock_actual=insumo.stock_actual,
+            stock_minimo=insumo.stock_minimo,
+            costo_unitario=insumo.costo_unitario,
+            esta_en_alerta=insumo.esta_en_alerta,
+            estado_alerta=insumo.estado_alerta,
+            activo=insumo.activo,
+            created_at=insumo.created_at,
+            updated_at=insumo.updated_at
+        )
+
+    def eliminar_insumo(self, insumo_id: str) -> dict:
+        """Da de baja lógica a un insumo."""
+        exito = self.dao.eliminarInsumo(insumo_id)
+        if not exito:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Insumo con id {insumo_id} no existe o ya fue eliminado."
+            )
+        return {"mensaje": "Insumo eliminado exitosamente", "id": insumo_id}

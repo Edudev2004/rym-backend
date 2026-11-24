@@ -9,7 +9,7 @@ import pytest
 from app.models.insumo import Insumo
 from app.daos.dao_inventario import DAOInventario, StockInsuficienteException, MOCK_INSUMOS
 from app.controllers.ctrl_kardex import CtrlKardex
-from app.schemas.kardex_schema import MovimientoKardexCreate
+from app.schemas.kardex_schema import MovimientoKardexCreate, InsumoCreateRequest
 
 @pytest.fixture
 def dao_test():
@@ -108,3 +108,41 @@ def test_pu_03_alerta_al_llegar_a_stock_minimo(dao_test):
     for a in alertas:
         assert a.stock_actual <= a.stock_minimo
         assert a.estado_alerta in ["ALERTA_AMARILLO", "CRITICO_ROJO", "CRITICO_AGOTADO"]
+
+def test_crear_insumo_codigo_autogenerado(dao_test):
+    """
+    Verifica que al crear un insumo sin código manual, el sistema autogenere
+    el código con formato INS-{PREFIJO}-{NUM} y registre el saldo inicial.
+    """
+    dao, _ = dao_test
+    ctrl = CtrlKardex(dao_inventario=dao)
+
+    nuevo = ctrl.crear_insumo(
+        InsumoCreateRequest(
+            nombre="Taza Glitter Dorada 11oz",
+            unidad_medida="UND",
+            stock_inicial=15.0,
+            stock_minimo=5.0,
+            costo_unitario=7.50,
+            descripcion="Taza especial para sublimación"
+        )
+    )
+
+    assert nuevo.id is not None
+    assert nuevo.codigo.startswith("INS-TAZ-")
+    assert nuevo.stock_actual == 15.0
+    assert nuevo.esta_en_alerta is False
+
+def test_eliminar_insumo(dao_test):
+    """
+    Verifica que la baja lógica desactive el insumo (activo = False).
+    """
+    dao, insumo_id = dao_test
+    ctrl = CtrlKardex(dao_inventario=dao)
+
+    res = ctrl.eliminar_insumo(insumo_id)
+    assert res["id"] == insumo_id
+
+    insumo = dao.findById(insumo_id)
+    # Al dar de baja, findById filtra por activo = TRUE
+    assert insumo is None or insumo.activo is False
