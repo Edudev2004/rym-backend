@@ -6,8 +6,8 @@ from typing import Optional
 from datetime import datetime
 
 class LoginRequest(BaseModel):
-    correo: EmailStr = Field(..., example="admin@rympersonaliza.pe")
-    password: str = Field(..., min_length=4, example="admin123")
+    correo: EmailStr = Field(..., examples=["admin@rympersonaliza.pe"])
+    password: str = Field(..., min_length=4, examples=["admin123"])
 
 class TokenResponse(BaseModel):
     access_token: str
