@@ -3,7 +3,7 @@ Enrutador Principal de la API v1
 Agrupa todos los sub-routers conforme a los submódulos del documento de arquitectura.
 """
 from fastapi import APIRouter
-from app.api.v1.endpoints import auth, kardex, consultas, productos
+from app.api.v1.endpoints import auth, kardex, consultas, productos, clientes
 
 api_router = APIRouter()
 
@@ -18,3 +18,6 @@ api_router.include_router(consultas.router, prefix="/consultas", tags=["Consulta
 
 # Catálogo de Productos y Recetas (Fase 2)
 api_router.include_router(productos.router, prefix="/productos", tags=["Catálogo de Productos y Recetas"])
+
+# Directorio de Clientes (Fase 2)
+api_router.include_router(clientes.router, prefix="/clientes", tags=["Directorio de Clientes"])
